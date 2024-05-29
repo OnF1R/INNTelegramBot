@@ -52,14 +52,14 @@ namespace INNTelegramBot
                     submitButton.Click();
 
                     // Ждем появления кнопки для скачивания PDF
-                    WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(2));
+                    WebDriverWait wait = new WebDriverWait(driver, TimeSpan.FromSeconds(5));
                     wait.Until(ExpectedConditions.ElementIsVisible(By.ClassName("op-excerpt")));
 
                     // Нажимаем кнопку для скачивания PDF
                     IWebElement downloadButton = driver.FindElement(By.ClassName("op-excerpt"));
                     downloadButton.Click();
 
-                    await Task.Delay(2000);
+                    await Task.Delay(5000);
 
                     if (Directory.GetFiles(downloadDirectory, "*.pdf").Length > 0)
                     {
