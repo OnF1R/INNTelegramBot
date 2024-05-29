@@ -169,7 +169,6 @@ namespace INNTelegramBot
                         else
                         {
                             innResultMessage += $"{i}: ИНН введен неправильно.";
-                            break;
                         }
 
                         innResultMessage += "\n";
