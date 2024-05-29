@@ -1,4 +1,6 @@
 ﻿using Dadata;
+using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using Telegram.Bot;
@@ -12,7 +14,9 @@ namespace INNTelegramBot
 {
     internal class Program
     {
-        private static ITelegramBotClient _client;
+        private static ITelegramBotClient _telegramBotClient;
+
+        private static SuggestClientAsync _dadataClient;
 
         private static ReceiverOptions _receiverOptions;
 
@@ -20,13 +24,22 @@ namespace INNTelegramBot
 
         private static async Task Main(string[] args)
         {
-            using (FileStream fStream = 
-                new FileStream(Path.Combine(Directory.GetCurrentDirectory(), "telegram_api_key.conf"), FileMode.Open, FileAccess.Read))
+            using (FileStream fStream =
+            new FileStream(Path.Combine(Directory.GetCurrentDirectory(), "telegram_api_key.conf"), FileMode.Open, FileAccess.Read))
             {
                 byte[] buffer = new byte[fStream.Length];
                 await fStream.ReadAsync(buffer);
-                _client = new TelegramBotClient(Encoding.Default.GetString(buffer));
+                _telegramBotClient = new TelegramBotClient(Encoding.Default.GetString(buffer));
             }
+
+            using (FileStream fStream =
+                new FileStream(Path.Combine(Directory.GetCurrentDirectory(), "dadata_api_key.conf"), FileMode.Open, FileAccess.Read))
+            {
+                byte[] buffer = new byte[fStream.Length];
+                await fStream.ReadAsync(buffer);
+                _dadataClient = new SuggestClientAsync(Encoding.Default.GetString(buffer));
+            }
+
 
             _receiverOptions = new ReceiverOptions
             {
@@ -39,9 +52,9 @@ namespace INNTelegramBot
 
             using var cts = new CancellationTokenSource();
 
-            _client.StartReceiving(UpdateHandler, ErrorHandler, _receiverOptions, cts.Token);
+            _telegramBotClient.StartReceiving(UpdateHandler, ErrorHandler, _receiverOptions, cts.Token);
 
-            var me = await _client.GetMeAsync();
+            var me = await _telegramBotClient.GetMeAsync();
 
             Console.WriteLine($"{me.FirstName} запущен!");
 
@@ -93,7 +106,7 @@ namespace INNTelegramBot
 
         private static async Task SendTextMessage(string text, Message message, CancellationToken cancellationToken)
         {
-            await _client.SendTextMessageAsync(
+            await _telegramBotClient.SendTextMessageAsync(
                 chatId: message.Chat.Id,
                 text: text,
                 replyToMessageId: message.MessageId,
@@ -117,8 +130,8 @@ namespace INNTelegramBot
                     $"\n/hello — Выведет информацию о создателе бота." +
                     $"\n/last — Повторит последнее действие бота." +
                     $"\n/inn <ИНН Организации/Организаций> — Выведет наименование организаций и их адреса. (ИНН необходимо вводить через пробел)" +
-                    $"\n/okved — В разработке" +
-                    $"\n/egrul — В разработке.";
+                    $"\n/okved — Не выполнено, невозможно выполнить с бесплатным доступом к Dadata." +
+                    $"\n/egrul — Отправляет PDF-файл с выпиской ЕГРЮЛ по ИНН.";
 
                     await SendTextMessage(helpText, message, cancellationToken);
                     break;
@@ -126,63 +139,127 @@ namespace INNTelegramBot
                     await SendTextMessage("Николаев Андрей\nE-mail: bender987@bk.ru\nGithub: https://github.com/OnF1R", message, cancellationToken);
                     break;
                 case CommandType.inn:
-                    string[] inns = message.Text.Split(' ');
+                    string[] innInns = message.Text.Split(' ');
 
-                    if (inns.Length < 2)
+                    if (innInns.Length < 2)
                     {
                         await SendTextMessage("Не указан ИНН.", message, cancellationToken);
                         break;
                     }
 
-                    string token;
+                    string innResultMessage = "";
 
-                    using (FileStream fStream =
-                        new FileStream(Path.Combine(Directory.GetCurrentDirectory(), "dadata_api_key.conf"), FileMode.Open, FileAccess.Read))
+                    for (int i = 1; i < innInns.Length; i++)
                     {
-                        byte[] buffer = new byte[fStream.Length];
-                        await fStream.ReadAsync(buffer);
-                        token = Encoding.Default.GetString(buffer);
-                    }
-
-                    var api = new SuggestClientAsync(token);
-
-                    string resultMessage = "";
-
-                    for (int i = 1; i < inns.Length; i++)
-                    {
-                        bool isNumber = long.TryParse(inns[i], out var number);
+                        bool isNumber = long.TryParse(innInns[i], out var number);
 
                         if (isNumber)
                         {
-                            var result = await api.FindParty(inns[i], cancellationToken);
+                            var result = await _dadataClient.FindParty(innInns[i], cancellationToken);
 
                             if (result.suggestions.Count > 0)
                             {
-                                resultMessage += $"{i}: {result.suggestions[0].data.name.full_with_opf}, {result.suggestions[0].data.address.value}";
+                                innResultMessage += $"{i}: {result.suggestions[0].data.name.full_with_opf}, {result.suggestions[0].data.address.value}";
                             }
                             else
                             {
-                                resultMessage += $"{i}: Ничего не найдено.";
+                                innResultMessage += $"{i}: Ничего не найдено.";
                             }
                         }
                         else
                         {
-                            resultMessage += $"{i}: ИНН введен неправильно.";
+                            innResultMessage += $"{i}: ИНН введен неправильно.";
                             break;
                         }
 
-                        resultMessage += "\n";
+                        innResultMessage += "\n";
                     }
 
-                    await SendTextMessage(resultMessage, message, cancellationToken);
+                    await SendTextMessage(innResultMessage, message, cancellationToken);
                     break;
                 case CommandType.last:
                     await SendTextMessage("Повтор последней команды", message, cancellationToken);
                     await ProcessCommand(_usersLastCommand[message.From.Username].CommandType, _usersLastCommand[message.From.Username].Message, cancellationToken);
                     break;
-                case CommandType.okved:
-                    break;
+                //case CommandType.okved:
+                //    string[] okvedInns = message.Text.Split(' ');
+
+                //    if (okvedInns.Length < 2)
+                //    {
+                //        await SendTextMessage("Не указан ИНН.", message, cancellationToken);
+                //        break;
+                //    }
+
+                //    string okvedResultMessage = "";
+
+                //    for (int i = 1; i < okvedInns.Length; i++)
+                //    {
+                //        bool isNumber = long.TryParse(okvedInns[i], out var number);
+
+                //        if (isNumber)
+                //        {
+                //            var result = await _dadataClient.FindParty(okvedInns[i], cancellationToken);
+
+                //            okvedResultMessage += $"Коды ОКВЭД и виды деятельности {i}:\n";
+
+                //            if (result.suggestions.Count > 0)
+                //            {
+                //                foreach (var okved in result.suggestions[0].data.okveds)
+                //                {
+                //                    okvedResultMessage += $" Код: {okved.code}";
+                //                    okvedResultMessage += $" Наименование деятельности:{okved.name}\n";
+                //                }
+                //            }
+                //            else
+                //            {
+                //                okvedResultMessage += $"{i}: Ничего не найдено.";
+                //            }
+                //        }
+                //        else
+                //        {
+                //            okvedResultMessage += $"{i}: ИНН введен неправильно.";
+                //            break;
+                //        }
+
+                //        okvedResultMessage += "\n";
+                //    }
+                //    await SendTextMessage(okvedResultMessage, message, cancellationToken);
+
+                //    Начал делать, но понял что с базовой версией Dadata API не получиться реализовать.
+                //    break;
                 case CommandType.egrul:
+                    string[] inn = message.Text.Split(' ');
+
+                    if (inn.Length == 2)
+                    {
+                        await InteractWithEGRUL.DownloadPDF(inn[1]);
+                        var fileInfo = InteractWithEGRUL.GetPDFFromDirectory();
+
+                        if (fileInfo is null)
+                        {
+                            await SendTextMessage("Ничего не найдено.", message, cancellationToken);
+                            InteractWithEGRUL.DeleteAllFromDirectory();
+                            break;
+                        }
+
+                        using (var stream = System.IO.File.Open(fileInfo.FullName, FileMode.Open))
+                        {
+                            InputFile inputFile = InputFile.FromStream(stream, inn[1] + ".pdf");
+                            var send = await _telegramBotClient.SendDocumentAsync(
+                                message.Chat.Id, inputFile, replyToMessageId: message.MessageId, cancellationToken: cancellationToken);
+                        }
+
+                        InteractWithEGRUL.DeleteAllFromDirectory();
+                    }
+                    else if (inn.Length < 2)
+                    {
+                        await SendTextMessage("Не указан ИНН.", message, cancellationToken);
+                    }
+                    else
+                    {
+                        await SendTextMessage("Введено большо одного ИНН.", message, cancellationToken);
+                    }
+
                     break;
                 default:
                     await SendTextMessage("Неизвестная команда. /help - для просмотра доступных команд.", message, cancellationToken);
@@ -212,7 +289,7 @@ namespace INNTelegramBot
                 Message = message,
                 CommandType = commandType,
             };
-            
+
             var isContains = _usersLastCommand.ContainsKey(username);
 
             if (isContains)

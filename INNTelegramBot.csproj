@@ -9,7 +9,9 @@
 
   <ItemGroup>
     <PackageReference Include="Dadata" Version="23.6.1" />
+    <PackageReference Include="DotNetSeleniumExtras.WaitHelpers" Version="3.11.0" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="Selenium.WebDriver" Version="4.21.0" />
     <PackageReference Include="Telegram.Bot" Version="20.0.0-alpha.1" />
   </ItemGroup>
 
